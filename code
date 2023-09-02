@@ -1,0 +1,74 @@
+import logging 
+import os 
+ 
+from aiogram import Bot, Dispatcher, types 
+from aiogram.contrib.fsm_storage.memory import MemoryStorage 
+from aiogram.dispatcher import FSMContext 
+from aiogram.dispatcher.filters import Text 
+from aiogram.dispatcher.filters.state import State, StatesGroup 
+from aiogram.types import ParseMode 
+from aiogram.utils import executor 
+import requests 
+ 
+BOT_TOKEN='5862005403:AAF6RTF0SRpANN8rwzQl02AE6IgaC8nIU-k' 
+ 
+# Устанавливаем уровень логов 
+logging.basicConfig(level=logging.INFO) 
+ 
+# Создаем бота и диспетчер 
+bot = Bot(token=BOT_TOKEN) 
+storage = MemoryStorage() 
+dp = Dispatcher(bot, storage=storage) 
+ 
+# Класс состояний 
+class FilmSearch(StatesGroup): 
+    waiting_for_title = State() 
+ 
+# Обработчик команды /start 
+@dp.message_handler(commands=['start']) 
+async def start_command(message: types.Message): 
+    await message.reply("Hello! I am a movie search bot. Enter the" 
+                        " name of the movie you are interested in.") 
+ 
+# Обработчик текстовых сообщений 
+@dp.message_handler(Text(equals=" Cancel", ignore_case=True), 
+                    state=FilmSearch.waiting_for_title) 
+async def cancel_search(message: types.Message, state: FSMContext): 
+    # Отменяем поиск и возвращаемся в начальное состояние 
+    await message.reply("Search canceled.", 
+                        reply_markup=types.ReplyKeyboardRemove()) 
+    await state.finish() 
+ 
+@dp.message_handler(state=None) 
+async def search_film(message: types.Message): 
+    # Запрашиваем название фильма 
+    await message.reply("Enter movie name:", 
+                        reply_markup=types.ReplyKeyboardRemove()) 
+    # Переходим в состояние ожидания названия фильма 
+    await FilmSearch.waiting_for_title.set() 
+ 
+@dp.message_handler(state=FilmSearch.waiting_for_title) 
+async def process_title(message: types.Message, state: FSMContext): 
+    # Получаем название фильма 
+    title = message.text 
+    # Отправляем запрос на OMDBI 
+    url = f"http://www.omdbapi.com/?apikey={'1f06087b'}&t={title}" 
+    response = requests.get(url) 
+    data = response.json() 
+    # Проверяем, что фильм найден 
+    if data["Response"] == "False": 
+        await message.reply("Movie not found. Please try another name.") 
+        return 
+    # Отправляем информацию о фильме 
+    text = f"<b>{data['Title']}</b>\n\n" 
+    text += f"<b>Year:</b> {data['Year']}\n" 
+    text += f"<b>Director:</b> {data['Director']}\n" 
+    text += f"<b>Actors:</b> {data['Actors']}\n" 
+    text += f"<b>Plot:</b> {data['Plot']}\n" 
+    text += f"<b>imdbRating:</b> {data['imdbRating']}\n" 
+    await message.reply(text, parse_mode=ParseMode.HTML) 
+    # Возвращаемся в начальное состояние 
+    await state.finish() 
+ 
+if name == 'main': 
+    executor.start_polling(dp, skip_updates=True)
